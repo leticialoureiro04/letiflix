@@ -1,108 +1,70 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import Comments from './Comments';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
 const MovieDetail = () => {
-  const { id } = useParams(); // ID do filme vindo da rota
+  const { id } = useParams();
   const [movie, setMovie] = useState(null);
-  const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Função para buscar detalhes do filme e comentários
-  const fetchMovie = async () => {
-    setLoading(true);
-    try {
-      // Buscar detalhes do filme
-      const movieResponse = await axios.get(`/api/movies/${id}`);
-      setMovie(movieResponse.data);
-
-      // Buscar comentários do filme
-      const commentsResponse = await axios.get(`/api/movies/${id}/comments`);
-      setComments(commentsResponse.data);
-    } catch (error) {
-      console.error('Error fetching movie details:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Executar quando o ID mudar
   useEffect(() => {
+    const fetchMovie = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get(`${API_URL}/movies/${id}`);
+        setMovie(response.data);
+        setLoading(false);
+      } catch (err) {
+        setError('Failed to load movie details');
+        setLoading(false);
+        console.error('Error fetching movie:', err);
+      }
+    };
+
     fetchMovie();
   }, [id]);
 
-  if (loading) {
-    return <div className="loading">Loading movie details...</div>;
-  }
-
-  if (!movie) {
-    return <div className="loading">Movie not found</div>;
-  }
+  if (loading) return <div className="container mt-5">Loading movie details...</div>;
+  if (error) return <div className="container mt-5 alert alert-danger">{error}</div>;
+  if (!movie) return <div className="container mt-5">Movie not found</div>;
 
   return (
-    <div>
-      <Link to="/" className="back-button">&larr; Back to Movies</Link>
-
-      <div className="movie-detail">
-        <div className="movie-detail-grid">
-          <div>
-            <img
-              src={movie.poster || 'https://via.placeholder.com/300x450?text=No+Poster'}
-              alt={movie.title}
-              className="movie-poster-large"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = 'https://via.placeholder.com/300x450?text=No+Poster';
-              }}
-            />
-          </div>
-
-          <div>
-            <div className="movie-header">
-              <h1>{movie.title}</h1>
-              <span className="movie-year-detail">({movie.year})</span>
+    <div className="container mt-5">
+      <div className="row">
+        <div className="col-md-4">
+          {movie.poster ? (
+            <img src={movie.poster} alt={movie.title} className="img-fluid rounded" />
+          ) : (
+            <div className="no-poster">No poster available</div>
+          )}
+        </div>
+        <div className="col-md-8">
+          <h2>{movie.title} <span className="text-muted">({movie.year})</span></h2>
+          
+          {movie.imdb && (
+            <div className="mb-3">
+              <span className="badge bg-warning text-dark">
+                IMDB: {movie.imdb.rating}/10 ({movie.imdb.votes} votes)
+              </span>
             </div>
-
-            <div className="movie-meta">
-              {movie.rated && <span>Rated: {movie.rated} | </span>}
-              {movie.runtime && <span>Runtime: {movie.runtime} minutes | </span>}
-              {movie.genres && <span>Genres: {movie.genres.join(', ')}</span>}
-            </div>
-
-            {movie.directors && (
-              <p><strong>Directors:</strong> {movie.directors.join(', ')}</p>
-            )}
-
-            {movie.cast && (
-              <p><strong>Cast:</strong> {movie.cast.join(', ')}</p>
-            )}
-
-            {movie.plot && (
-              <div className="movie-plot">
-                <h3>Plot</h3>
-                <p>{movie.plot}</p>
-              </div>
-            )}
-
-            {movie.awards && movie.awards.text && (
-              <div>
-                <h3>Awards</h3>
-                <p>{movie.awards.text}</p>
-              </div>
-            )}
-
-            {movie.imdb && (
-              <div className="movie-meta">
-                <p><strong>IMDB Rating:</strong> {movie.imdb.rating} ({movie.imdb.votes.toLocaleString()} votes)</p>
-              </div>
-            )}
-          </div>
+          )}
+          
+          <p className="lead">{movie.plot || 'No plot available'}</p>
         </div>
       </div>
 
-      {/* Passar movieId e fetchMovie para o componente Comments */}
-      <Comments comments={comments} movieId={id} fetchMovie={fetchMovie} />
+      <hr className="my-4" />
+      
+      {/* Comments Section */}
+      <div className="row mt-4">
+        <div className="col-12">
+          <Comments movieId={id} />
+        </div>
+      </div>
     </div>
   );
 };

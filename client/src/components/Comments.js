@@ -1,114 +1,209 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const Comments = ({ comments, movieId, fetchMovie }) => {
-  const [name, setName] = useState('Anónimo');
-  const [text, setText] = useState('');
-  const [editId, setEditId] = useState(null);
-  const [editText, setEditText] = useState('');
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-  // Formata a data
-  const formatDate = (dateString) => {
-    const options = { year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+const Comments = ({ movieId }) => {
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState({ name: '', email: '', text: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [editComment, setEditComment] = useState({ name: '', email: '', text: '' });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch comments for a movie
+  useEffect(() => {
+    const fetchComments = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get(`${API_URL}/movies/${movieId}/comments`);
+        setComments(response.data);
+        setLoading(false);
+      } catch (err) {
+        setError('Failed to load comments');
+        setLoading(false);
+        console.error('Error fetching comments:', err);
+      }
+    };
+
+    if (movieId) {
+      fetchComments();
+    }
+  }, [movieId]);
+
+  // Handle input change for new comment form
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewComment({ ...newComment, [name]: value });
   };
 
-  // Adicionar comentário
-  const handleAdd = async () => {
-    if (!text.trim()) return;
+  // Handle input change for edit comment form
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditComment({ ...editComment, [name]: value });
+  };
 
+  // Submit new comment
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
-      await axios.post(`http://localhost:5000/api/movies/${movieId}/comments`, {
-        movie_id: movieId,
-        name,
-        text
-      });
-      setText('');
-      fetchMovie();
-    } catch (error) {
-      console.error('Erro ao adicionar comentário:', error);
+      const response = await axios.post(`${API_URL}/movies/${movieId}/comments`, newComment);
+      setComments([...comments, response.data]);
+      setNewComment({ name: '', email: '', text: '' });
+    } catch (err) {
+      setError('Failed to add comment');
+      console.error('Error adding comment:', err);
     }
   };
 
-  // Editar comentário
-  const handleUpdate = async () => {
-    if (!editText.trim()) return;
+  // Start editing a comment
+  const startEdit = (comment) => {
+    setEditingId(comment._id);
+    setEditComment({
+      name: comment.name,
+      email: comment.email,
+      text: comment.text
+    });
+  };
 
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditComment({ name: '', email: '', text: '' });
+  };
+
+  // Update a comment
+  const updateComment = async (id) => {
     try {
-      await axios.put(`/api/comments/${editId}`, {
-        text: editText
-      });
-      setEditId(null);
-      setEditText('');
-      fetchMovie();
-    } catch (error) {
-      console.error('Erro ao editar comentário:', error);
+      const response = await axios.put(`${API_URL}/comments/${id}`, editComment);
+      
+      setComments(comments.map(comment => 
+        comment._id === id ? response.data : comment
+      ));
+      
+      setEditingId(null);
+      setEditComment({ name: '', email: '', text: '' });
+    } catch (err) {
+      setError('Failed to update comment');
+      console.error('Error updating comment:', err);
     }
   };
 
-  // Apagar comentário
-  const handleDelete = async (commentId) => {
+  // Delete a comment
+  const deleteComment = async (id) => {
     try {
-      await axios.delete(`/api/comments/${commentId}`);
-      fetchMovie();
-    } catch (error) {
-      console.error('Erro ao apagar comentário:', error);
+      await axios.delete(`${API_URL}/comments/${id}`);
+      setComments(comments.filter(comment => comment._id !== id));
+    } catch (err) {
+      setError('Failed to delete comment');
+      console.error('Error deleting comment:', err);
     }
   };
+
+  if (loading) return <div>Loading comments...</div>;
+  if (error) return <div className="error-message">{error}</div>;
 
   return (
     <div className="comments-section">
-      <h2>Comentários ({comments.length})</h2>
+      <h3>Comments</h3>
+      
+      {/* Add Comment Form */}
+      <form onSubmit={handleSubmit} className="comment-form">
+        <h4>Add a Comment</h4>
+        <div className="form-group">
+          <input
+            type="text"
+            name="name"
+            placeholder="Your Name"
+            value={newComment.name}
+            onChange={handleInputChange}
+            required
+            className="form-control"
+          />
+        </div>
+        <div className="form-group">
+          <input
+            type="email"
+            name="email"
+            placeholder="Your Email"
+            value={newComment.email}
+            onChange={handleInputChange}
+            required
+            className="form-control"
+          />
+        </div>
+        <div className="form-group">
+          <textarea
+            name="text"
+            placeholder="Your Comment"
+            value={newComment.text}
+            onChange={handleInputChange}
+            required
+            className="form-control"
+            rows="3"
+          ></textarea>
+        </div>
+        <button type="submit" className="btn btn-primary">Post Comment</button>
+      </form>
 
-      {/* Formulário para novo comentário */}
-      <div className="add-comment">
-        <input
-          type="text"
-          placeholder="Teu nome"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <textarea
-          placeholder="Escreve o teu comentário..."
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button onClick={handleAdd}>Adicionar Comentário</button>
-      </div>
-
-      {/* Comentários existentes */}
-      {comments.length === 0 ? (
-        <p>Nenhum comentário para este filme ainda.</p>
-      ) : (
-        comments.map((comment) => (
-          <div key={comment._id} className="comment">
-            <div className="comment-header">
-              <span className="comment-name">{comment.name}</span>
-              <span className="comment-date">{formatDate(comment.date)}</span>
+      {/* Comments List */}
+      <div className="comments-list">
+        {comments.length === 0 ? (
+          <p>No comments yet. Be the first to comment!</p>
+        ) : (
+          comments.map(comment => (
+            <div key={comment._id} className="comment-item">
+              {editingId === comment._id ? (
+                <div className="edit-form">
+                  <div className="form-group">
+                    <input
+                      type="text"
+                      name="name"
+                      value={editComment.name}
+                      onChange={handleEditChange}
+                      className="form-control"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <input
+                      type="email"
+                      name="email"
+                      value={editComment.email}
+                      onChange={handleEditChange}
+                      className="form-control"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <textarea
+                      name="text"
+                      value={editComment.text}
+                      onChange={handleEditChange}
+                      className="form-control"
+                      rows="3"
+                    ></textarea>
+                  </div>
+                  <button onClick={() => updateComment(comment._id)} className="btn btn-success">Save</button>
+                  <button onClick={cancelEdit} className="btn btn-secondary">Cancel</button>
+                </div>
+              ) : (
+                <>
+                  <div className="comment-header">
+                    <h5>{comment.name}</h5>
+                    <span className="comment-date">
+                      {new Date(comment.date).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="comment-text">{comment.text}</p>
+                  <div className="comment-actions">
+                    <button onClick={() => startEdit(comment)} className="btn btn-sm btn-outline-primary">Edit</button>
+                    <button onClick={() => deleteComment(comment._id)} className="btn btn-sm btn-outline-danger">Delete</button>
+                  </div>
+                </>
+              )}
             </div>
-
-            {editId === comment._id ? (
-              <div>
-                <textarea
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                />
-                <button onClick={handleUpdate}>Guardar</button>
-                <button onClick={() => setEditId(null)}>Cancelar</button>
-              </div>
-            ) : (
-              <>
-                <p className="comment-text">{comment.text}</p>
-                <button onClick={() => {
-                  setEditId(comment._id);
-                  setEditText(comment.text);
-                }}>Editar</button>
-                <button onClick={() => handleDelete(comment._id)}>Apagar</button>
-              </>
-            )}
-          </div>
-        ))
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 };

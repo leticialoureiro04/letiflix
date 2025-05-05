@@ -1,209 +1,145 @@
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ObjectId } = require('mongodb');
-require('dotenv').config();
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const port = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json());
 
-// MongoDB Connection
-const uri = process.env.MONGODB_URI;
-const client = new MongoClient(uri);
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-async function connectDB() {
-  try {
-    await client.connect();
-    console.log('Connected to MongoDB');
-    const database = client.db('sample_mflix');
-    return database;
-  } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-    process.exit(1);
+// Movie Schema
+const movieSchema = new mongoose.Schema({
+  title: String,
+  plot: String,
+  poster: String,
+  year: Number,
+  imdb: {
+    rating: Number,
+    votes: Number,
+    id: Number
   }
-}
+});
 
-// Initialize database connection
-let db;
-(async () => {
-  db = await connectDB();
-})();
+// Comment Schema
+const commentSchema = new mongoose.Schema({
+  movie_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Movie',
+    required: true
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  email: {
+    type: String,
+    required: true
+  },
+  text: {
+    type: String,
+    required: true
+  },
+  date: {
+    type: Date,
+    default: Date.now
+  }
+});
 
-// Routes
+const Movie = mongoose.model('Movie', movieSchema);
+const Comment = mongoose.model('Comment', commentSchema);
+
+// MOVIE ROUTES
+// Get all movies
 app.get('/api/movies', async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    const movies = await db.collection('movies')
-      .find({})
-      .project({
-        title: 1,
-        poster: 1,
-        year: 1,
-        plot: 1
-      })
-      .sort({ year: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .toArray();
-    
-    const total = await db.collection('movies').countDocuments();
-    
-    res.json({
-      movies,
-      totalPages: Math.ceil(total / parseInt(limit)),
-      currentPage: parseInt(page)
-    });
-  } catch (error) {
-    console.error('Error fetching movies:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    const movies = await Movie.find();
+    res.json(movies);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
+// Get a single movie
 app.get('/api/movies/:id', async (req, res) => {
   try {
-    const movie = await db.collection('movies').findOne({ 
-      _id: new ObjectId(req.params.id) 
-    });
-    
-    if (!movie) {
-      return res.status(404).json({ error: 'Movie not found' });
-    }
-    
+    const movie = await Movie.findById(req.params.id);
+    if (!movie) return res.status(404).json({ message: 'Movie not found' });
     res.json(movie);
-  } catch (error) {
-    console.error('Error fetching movie details:', error);
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-app.get('/api/movies/:id/comments', async (req, res) => {
+// COMMENT ROUTES
+// Get all comments for a movie
+app.get('/api/movies/:movieId/comments', async (req, res) => {
   try {
-    const comments = await db.collection('comments')
-      .find({ movie_id: new ObjectId(req.params.id) })
-      .sort({ date: -1 })
-      .toArray();
-    
+    const comments = await Comment.find({ movie_id: req.params.movieId });
     res.json(comments);
-  } catch (error) {
-    console.error('Error fetching movie comments:', error);
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// CRUD Operations for Movies
+// Add a new comment
+app.post('/api/movies/:movieId/comments', async (req, res) => {
+  const comment = new Comment({
+    movie_id: req.params.movieId,
+    name: req.body.name,
+    email: req.body.email,
+    text: req.body.text
+  });
 
-// Create a new movie
-app.post('/api/movies', async (req, res) => {
   try {
-    const movieData = {
-      ...req.body,
-      year: parseInt(req.body.year) || 0,
-      runtime: parseInt(req.body.runtime) || 0,
-      released: req.body.released ? new Date(req.body.released) : new Date(),
-      lastupdate: new Date()
-    };
-
-    const result = await db.collection('movies').insertOne(movieData);
-    res.status(201).json({
-      success: true,
-      id: result.insertedId,
-      message: 'Movie added successfully'
-    });
-  } catch (error) {
-    console.error('Error adding movie:', error);
-    res.status(500).json({ error: 'Error adding movie', details: error.message });
+    const newComment = await comment.save();
+    res.status(201).json(newComment);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
-app.post('/api/movies/:id/comments', async (req, res) => {
+// Update a comment
+app.put('/api/comments/:id', async (req, res) => {
   try {
-    const { name, text } = req.body;
-    const movieId = req.params.id;
-
-    if (!text || !name) {
-      return res.status(400).json({ error: 'Name and text are required' });
-    }
-
-    const comment = {
-      movie_id: new ObjectId(movieId),
-      name,
-      text,
-      date: new Date()
-    };
-
-    const result = await db.collection('comments').insertOne(comment);
-    res.status(201).json({
-      success: true,
-      message: 'Comment added successfully',
-      commentId: result.insertedId
-    });
-  } catch (error) {
-    console.error('Error adding comment:', error);
-    res.status(500).json({ error: 'Error adding comment', details: error.message });
+    const comment = await Comment.findById(req.params.id);
+    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+    
+    if (req.body.name) comment.name = req.body.name;
+    if (req.body.email) comment.email = req.body.email;
+    if (req.body.text) comment.text = req.body.text;
+    
+    const updatedComment = await comment.save();
+    res.json(updatedComment);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
-app.put('/api/comments/:commentId', async (req, res) => {
+// Delete a comment
+app.delete('/api/comments/:id', async (req, res) => {
   try {
-    const commentId = req.params.commentId;
-    const { text } = req.body;
-
-    if (!text) {
-      return res.status(400).json({ error: 'Text is required to update comment' });
-    }
-
-    const result = await db.collection('comments').updateOne(
-      { _id: new ObjectId(commentId) },
-      {
-        $set: {
-          text,
-          date: new Date()
-        }
-      }
-    );
-
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ error: 'Comment not found' });
-    }
-
-    res.json({
-      success: true,
-      message: 'Comment updated successfully'
-    });
-  } catch (error) {
-    console.error('Error updating comment:', error);
-    res.status(500).json({ error: 'Error updating comment', details: error.message });
-  }
-});
-
-app.delete('/api/comments/:commentId', async (req, res) => {
-  try {
-    const commentId = req.params.commentId;
-
-    const result = await db.collection('comments').deleteOne({
-      _id: new ObjectId(commentId)
-    });
-
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: 'Comment not found' });
-    }
-
-    res.json({
-      success: true,
-      message: 'Comment deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting comment:', error);
-    res.status(500).json({ error: 'Error deleting comment', details: error.message });
+    const comment = await Comment.findById(req.params.id);
+    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+    
+    await comment.deleteOne();
+    res.json({ message: 'Comment deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
